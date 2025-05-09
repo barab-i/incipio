@@ -26,6 +26,42 @@ var metadata = plugin.Metadata{
 	IsDefault:   true,
 }
 
+// List of known terminal emulators to try, in order of preference.
+var knownTerminalEmulators = []string{
+	// Common distribution abstractions/defaults
+	"x-terminal-emulator", // Debian/Ubuntu specific abstraction
+	"gnome-terminal",      // GNOME default
+	"konsole",             // KDE default
+	"xfce4-terminal",      // XFCE default
+	"mate-terminal",       // MATE default
+	"lxterminal",          // LXDE/LXQt default
+	"deepin-terminal",     // Deepin DE default
+
+	// Popular standalone terminals
+	"alacritty",
+	"kitty",
+	"wezterm",
+	"foot",
+	"ghostty",
+	"st",
+	"terminator",
+	"tilix",
+	"urxvt",
+
+	// Other known terminals / Fallbacks
+	"qterminal",
+	"terminology",
+	"roxterm",
+	"xterm",
+	"uxterm",
+	"rxvt",
+	"aterm",
+	"Eterm",
+
+	// Wrappers (less ideal to call directly if the base exists, but good for completeness)
+	"xfce4-terminal.wrapper",
+}
+
 // DesktopEntry represents information parsed from a .desktop file.
 type DesktopEntry struct {
 	Name        string
@@ -35,6 +71,7 @@ type DesktopEntry struct {
 	FilePath    string
 	GenericName string
 	Keywords    string
+	Terminal    bool
 }
 
 // AppLauncherPlugin implements the plugin.Plugin interface for launching apps.
@@ -198,8 +235,23 @@ func (p *AppLauncherPlugin) Execute(identifier string) tea.Cmd {
 			zap.String("filePath", targetApp.FilePath))
 		return nil
 	}
-	command := cleanedExec[0]
-	args := cleanedExec[1:]
+
+	var command string
+	var args []string
+
+	if targetApp.Terminal {
+		terminalCmd := findTerminalEmulator()
+		if terminalCmd == "" {
+			zap.L().Error("Failed to find any suitable terminal emulator. Cannot launch terminal application.",
+				zap.String("application", targetApp.Name))
+			return nil
+		}
+		command = terminalCmd
+		args = append([]string{"-e"}, cleanedExec...)
+	} else {
+		command = cleanedExec[0]
+		args = cleanedExec[1:]
+	}
 
 	cmd := exec.Command(command, args...)
 	cmd.Stdout = nil
@@ -211,8 +263,10 @@ func (p *AppLauncherPlugin) Execute(identifier string) tea.Cmd {
 	err := cmd.Start()
 
 	if err != nil {
-		zap.L().Error("Error executing command.",
-			zap.String("command", targetApp.Exec),
+		zap.L().Error("Error starting command.",
+			zap.String("originalExec", targetApp.Exec),
+			zap.String("executedCommand", command),
+			zap.Strings("executedArgs", args),
 			zap.String("filePath", targetApp.FilePath),
 			zap.Error(err))
 		return nil
@@ -289,6 +343,11 @@ func parseDesktopFile(filePath string) (*DesktopEntry, error) {
 		return nil, fmt.Errorf("missing [Desktop Entry] section or Name key in '%s'", filePath)
 	}
 
+	terminal, err := section.Key("Terminal").Bool()
+	if err != nil {
+		terminal = false
+	}
+
 	entry := &DesktopEntry{
 		Name:        section.Key("Name").String(),
 		Exec:        section.Key("Exec").String(),
@@ -297,6 +356,7 @@ func parseDesktopFile(filePath string) (*DesktopEntry, error) {
 		GenericName: section.Key("GenericName").String(),
 		Keywords:    section.Key("Keywords").String(),
 		FilePath:    filePath,
+		Terminal:    terminal,
 	}
 
 	if entry.Name == "" || entry.Exec == "" {
@@ -322,4 +382,29 @@ func shouldDisplayEntry(entry *DesktopEntry) bool {
 	}
 
 	return true
+}
+
+// findTerminalEmulator tries to find a suitable terminal emulator.
+// It checks $TERMINAL first, then a list of known emulators.
+func findTerminalEmulator() string {
+	// Try $TERMINAL environment variable
+	envTerminal := os.Getenv("TERMINAL")
+	if envTerminal != "" {
+		if path, err := exec.LookPath(envTerminal); err == nil {
+			zap.L().Debug("Using terminal from $TERMINAL.", zap.String("terminal", path))
+			return path
+		}
+		zap.L().Debug("$TERMINAL is set but command not found.", zap.String("terminal", envTerminal))
+	}
+
+	// Try a list of known terminal emulators
+	for _, t := range knownTerminalEmulators {
+		if path, err := exec.LookPath(t); err == nil {
+			zap.L().Debug("Found suitable terminal from known list.", zap.String("terminal", path))
+			return path
+		}
+	}
+
+	zap.L().Error("Failed to find any terminal emulator.")
+	return ""
 }
