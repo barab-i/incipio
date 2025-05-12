@@ -73,16 +73,21 @@ cd incipio
 go build ./cmd/incipio
 ```
 
-### 1. Using `nix profile install` (User Environment)
+## Installing
 
-This installs the application only for the current user.
+### 1. Using nix profile install (User Environment)
+
+This installs the application into your user profile from the official GitHub repository:
 
 ```sh
-# Install from the local flake in the current directory
-nix profile install .#incipio
-
-# Or, if you have pushed the flake to a remote repository (e.g., GitHub)
 nix profile install github:barab-i/incipio
+```
+
+If you have cloned the repository locally (e.g., for development or to test changes), you can install from the local flake:
+
+```sh
+# Navigate to the cloned directory 
+nix profile install .#incipio
 ```
 
 ### 2. Adding to NixOS Configuration (System-wide)
@@ -92,7 +97,7 @@ If you are using NixOS, you can add Incipio to your system configuration (`/etc/
 First, add the flake as an input in your main `flake.nix`:
 
 ```nix
-// filepath: /path/to/your/flake.nix
+# filepath: /path/to/your/flake.nix
 {
   description = "My NixOS Configuration";
 
@@ -122,7 +127,7 @@ First, add the flake as an input in your main `flake.nix`:
 Then, add the package to your environment.systemPackages in configuration.nix:
 
 ```nix
-// filepath: /path/to/your/configuration.nix
+# filepath: /path/to/your/configuration.nix
 { config, pkgs, inputs, ... }:
 
 {
@@ -145,7 +150,7 @@ Add the flake input similarly to the NixOS example above (either in your system 
 Then, add the package to `home.packages` in your `home.nix`:
 
 ```nix
-// filepath: /path/to/your/home.nix
+# filepath: /path/to/your/home.nix
 { config, pkgs, inputs, ... }:
 
 {
